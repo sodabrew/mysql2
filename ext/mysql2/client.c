@@ -137,10 +137,10 @@ static VALUE rb_raise_mysql2_error(mysql_client_wrapper *wrapper) {
     /* MySQL >= 5.5 uses UTF-8 errors internally and converts them to the connection encoding. */
     rb_enc_associate(rb_error_msg, conn_enc);
     rb_enc_associate(rb_sql_state, conn_enc);
-  }
-  if (default_internal_enc) {
-    rb_error_msg = rb_str_export_to_enc(rb_error_msg, default_internal_enc);
-    rb_sql_state = rb_str_export_to_enc(rb_sql_state, default_internal_enc);
+    if (default_internal_enc) {
+      rb_error_msg = rb_str_export_to_enc(rb_error_msg, default_internal_enc);
+      rb_sql_state = rb_str_export_to_enc(rb_sql_state, default_internal_enc);
+    }
   }
 #endif
 
