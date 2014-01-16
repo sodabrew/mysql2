@@ -131,8 +131,8 @@ static VALUE rb_raise_mysql2_error(mysql_client_wrapper *wrapper) {
   if (wrapper->server_version < 50500) {
     /* MySQL < 5.5 uses mixed encoding, assume binary and transcode to the connection encoding. */
     rb_encoding *err_enc = rb_ascii8bit_encoding();
-    rb_error_msg = rb_str_conv_enc_opts(rb_error_msg, err_enc, conn_enc, ECONV_UNDEF_REPLACE | ECONV_INVALID_REPLACE, Qnil);
-    rb_sql_state = rb_str_conv_enc_opts(rb_sql_state, err_enc, conn_enc, ECONV_UNDEF_REPLACE | ECONV_INVALID_REPLACE, Qnil);
+    rb_error_msg = rb_str_conv_enc_opts(rb_error_msg, err_enc, (default_internal_enc ? default_internal_enc : conn_enc), ECONV_UNDEF_REPLACE | ECONV_INVALID_REPLACE, Qnil);
+    rb_sql_state = rb_str_conv_enc_opts(rb_sql_state, err_enc, (default_internal_enc ? default_internal_enc : conn_enc), ECONV_UNDEF_REPLACE | ECONV_INVALID_REPLACE, Qnil);
   } else {
     /* MySQL >= 5.5 uses UTF-8 errors internally and converts them to the connection encoding. */
     rb_enc_associate(rb_error_msg, conn_enc);
