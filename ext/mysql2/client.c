@@ -886,13 +886,16 @@ static VALUE rb_mysql_client_server_info(VALUE self) {
  * Return the file descriptor number for this client.
  */
 static VALUE rb_mysql_client_socket(VALUE self) {
-#ifndef _WIN32
+  int fd;
   GET_CLIENT(self);
   REQUIRE_CONNECTED(wrapper);
-  return INT2NUM(wrapper->client->net.fd);
+#if defined(_WIN32) && defined(HAVE_RB_W32_WRAP_IO_HANDLE)
+  /* FIXME Do I need to free the return value with rb_w32_unwrap_io_handle to avoid leaking? */
+  fd = rb_w32_wrap_io_handle((HANDLE)(intptr_t)wrapper->client->net.fd, O_RDWR|O_BINARY|O_NOINHERIT);
 #else
-  rb_raise(cMysql2Error, "Raw access to the mysql file descriptor isn't supported on Windows");
+  fd = wrapper->client->net.fd;
 #endif
+  return INT2NUM(fd);
 }
 
 /* call-seq:

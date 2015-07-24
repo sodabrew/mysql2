@@ -14,6 +14,7 @@ end
 
 # 2.0-only
 have_header('ruby/thread.h') && have_func('rb_thread_call_without_gvl', 'ruby/thread.h')
+have_func('rb_w32_wrap_io_handle')
 
 # 1.9-only
 have_func('rb_thread_blocking_region')
