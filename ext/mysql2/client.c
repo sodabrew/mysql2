@@ -1307,7 +1307,7 @@ static VALUE set_charset_name(VALUE self, VALUE value) {
   return value;
 }
 
-static VALUE set_ssl_options(VALUE self, VALUE key, VALUE cert, VALUE ca, VALUE capath, VALUE cipher) {
+static VALUE set_ssl_options(VALUE self, VALUE key, VALUE cert, VALUE ca, VALUE capath, VALUE cipher, VALUE version) {
   GET_CLIENT(self);
 
   mysql_ssl_set(wrapper->client,
@@ -1316,6 +1316,12 @@ static VALUE set_ssl_options(VALUE self, VALUE key, VALUE cert, VALUE ca, VALUE 
       NIL_P(ca)     ? NULL : StringValueCStr(ca),
       NIL_P(capath) ? NULL : StringValueCStr(capath),
       NIL_P(cipher) ? NULL : StringValueCStr(cipher));
+
+#ifdef MYSQL_OPT_TLS_VERSION
+  if (!NIL_P(version)) {
+    _mysql_client_options(self, MYSQL_OPT_TLS_VERSION, StringValueCStr(version));
+  }
+#endif
 
   return self;
 }
@@ -1447,7 +1453,7 @@ void init_mysql2_client() {
   rb_define_private_method(cMysql2Client, "default_group=", set_read_default_group, 1);
   rb_define_private_method(cMysql2Client, "init_command=", set_init_command, 1);
   rb_define_private_method(cMysql2Client, "default_auth=", set_default_auth, 1);
-  rb_define_private_method(cMysql2Client, "ssl_set", set_ssl_options, 5);
+  rb_define_private_method(cMysql2Client, "ssl_set", set_ssl_options, 6);
   rb_define_private_method(cMysql2Client, "ssl_mode=", rb_set_ssl_mode_option, 1);
   rb_define_private_method(cMysql2Client, "enable_cleartext_plugin=", set_enable_cleartext_plugin, 1);
   rb_define_private_method(cMysql2Client, "initialize_ext", initialize_ext, 0);

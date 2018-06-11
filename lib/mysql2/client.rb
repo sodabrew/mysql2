@@ -46,7 +46,7 @@ module Mysql2
       # force the encoding to utf8
       self.charset_name = opts[:encoding] || 'utf8'
 
-      ssl_options = opts.values_at(:sslkey, :sslcert, :sslca, :sslcapath, :sslcipher)
+      ssl_options = opts.values_at(:sslkey, :sslcert, :sslca, :sslcapath, :sslcipher, :tls_version)
       ssl_set(*ssl_options) if ssl_options.any? || opts.key?(:sslverify)
       self.ssl_mode = parse_ssl_mode(opts[:ssl_mode]) if opts[:ssl_mode]
 
