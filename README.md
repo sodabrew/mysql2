@@ -322,6 +322,7 @@ Mysql2::Client.new(
   )
 ```
 
+<<<<<<< Updated upstream
 For MySQL versions 5.7.11 and higher, use `:ssl_mode` to prefer or require an
 SSL connection and certificate validation. For earlier versions of MySQL, use
 the `:sslverify` boolean. For details on each of the `:ssl_mode` options, see
@@ -339,6 +340,27 @@ MariaDB does not support the `:preferred` or `:verify_ca` options. For more
 information about SSL/TLS in MariaDB, see
 [https://mariadb.com/kb/en/securing-connections-for-client-and-server/](https://mariadb.com/kb/en/securing-connections-for-client-and-server/)
 and [https://mariadb.com/kb/en/mysql_optionsv/#tls-options](https://mariadb.com/kb/en/mysql_optionsv/#tls-options)
+||||||| Stash base
+=======
+
+
+There are notable differences in SSL/TLS options between MySQL, MariaDB, and
+Connector/C versions. It is strongly recommended to use a recent point release
+in each major version family as noted below. Note these are _client_ library
+options, the server can be a different version of MySQL or MariaDB or a
+work-alike such as AWS Aurora using the same network protocol.
+
+| Client Library          | Connection Flags |
+| ---                     | ---              |
+| MariaDB 10.x            | `sslverify: true`, `ssl_mode: :disabled / :required / :verify_identity`                           |
+| MariaDB Connector/C 3.x | `sslverify: true`, `ssl_mode: :disabled / :required / :verify_identity`                           |
+| MySQL 5.5.x             | `sslverify: true`, one or more of `:sslca, :sslcapath, :sslcert, :sslkey, :sslcipher` required    |
+| MySQL 5.6.36+           | `sslverify: true`, `ssl_mode: :disabled / :required / :verify_identity`                           |
+| MySQL 5.7.11+           | `sslverify: true`, `ssl_mode: :disabled / :preferred / :required / :verify_ca / :verify_identity` |
+| MySQL Connector/C 6.x   | `sslverify: true`, `ssl_mode: :disabled / :required / :verify_identity`                           |
+| MySQL 8.0.x             | `ssl_mode: :disabled / :preferred / :required / :verify_ca / :verify_identity`                    |
+| MySQL Connector/C 8.x   | `ssl_mode: :disabled / :preferred / :required / :verify_ca / :verify_identity`                    |
+>>>>>>> Stashed changes
 
 ### Secure auth
 
