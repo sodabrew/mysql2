@@ -10,10 +10,10 @@ jobs:
       matrix:
         include:
           # Windows-2025 has Ruby 3.3 and MySQL 8.0 installed
-          - {os: windows-2025}
+          - {os: windows-2025, ruby: '3.3'}
 
           # Windows-2022 has Ruby 3.0 and MySQL 8.0 installed
-          - {os: windows-2022}
+          - {os: windows-2022, ruby: '3.0'}
 
 
       # On the fail-fast: true, it cancels all in-progress jobs
