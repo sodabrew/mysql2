@@ -91,8 +91,10 @@ static ID intern_brackets, intern_merge, intern_merge_bang, intern_new_with_args
 #endif
 #ifdef HAVE_CONST_MYSQL_OPT_SSL_ENFORCE
   #define SSL_MODE_DISABLED 1
+  #define SSL_MODE_PREFERRED 2
   #define SSL_MODE_REQUIRED 3
   #define HAVE_CONST_SSL_MODE_DISABLED
+  #define HAVE_CONST_SSL_MODE_PREFERRED
   #define HAVE_CONST_SSL_MODE_REQUIRED
 #endif
 
@@ -337,8 +339,10 @@ static VALUE rb_set_ssl_mode_option(VALUE self, VALUE setting) {
 
   /* For these versions, map from the options we're exposing to Ruby to the constant available:
    *   ssl_mode: :verify_identity to MYSQL_OPT_SSL_VERIFY_SERVER_CERT = 1
-   *   ssl_mode: :required to MYSQL_OPT_SSL_ENFORCE = 1
-   *   ssl_mode: :disabled to MYSQL_OPT_SSL_ENFORCE = 0
+   *   ssl_mode: :verify_ca to MYSQL_OPT_SSL_VERIFY_SERVER_CERT = 1
+   *   ssl_mode: :required to MYSQL_OPT_SSL_ENFORCE = 1, MYSQL_OPT_SSL_VERIFY_SERVER_CERT = 0
+   *   ssl_mode: :preferred to MYSQL_OPT_SSL_ENFORCE = 1, MYSQL_OPT_SSL_VERIFY_SERVER_CERT = 0 (Connector/C only)
+   *   ssl_mode: :disabled to MYSQL_OPT_SSL_ENFORCE = 0, MYSQL_OPT_SSL_VERIFY_SERVER_CERT = 0
    */
 #if defined(HAVE_CONST_MYSQL_OPT_SSL_VERIFY_SERVER_CERT) || defined(HAVE_CONST_MYSQL_OPT_SSL_ENFORCE)
   GET_CLIENT(self);
@@ -415,9 +419,21 @@ static VALUE rb_set_ssl_mode_option(VALUE self, VALUE setting) {
     }
 #endif
 #ifdef HAVE_CONST_MYSQL_OPT_SSL_ENFORCE
-    if (val == SSL_MODE_DISABLED || val == SSL_MODE_REQUIRED) {
-      my_bool b = (val == SSL_MODE_REQUIRED);
-      int result = mysql_options(wrapper->client, MYSQL_OPT_SSL_ENFORCE, &b);
+    /* On libmysqlclient, MYSQL_OPT_SSL_ENFORCE demands TLS, so :preferred
+     * exists only on Connector/C, where it enables TLS opportunistically. */
+    if (val == SSL_MODE_DISABLED || val == SSL_MODE_REQUIRED || (val == SSL_MODE_PREFERRED && mariadb_family)) {
+      my_bool enforce = (val != SSL_MODE_DISABLED);
+      int result = mysql_options(wrapper->client, MYSQL_OPT_SSL_ENFORCE, &enforce);
+#ifdef HAVE_CONST_MYSQL_OPT_SSL_VERIFY_SERVER_CERT
+      /* Connector/C 3.4 verifies the server certificate by default, and a
+       * verifying connection forces TLS on regardless of
+       * MYSQL_OPT_SSL_ENFORCE. None of these modes verify, so clear it. */
+      if (result == 0) {
+        my_bool verify = 0;
+        result = mysql_options(wrapper->client, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verify);
+      }
+#endif
+      wrapper->tls_required = (val == SSL_MODE_REQUIRED);
       return INT2NUM(result);
     }
 #endif
@@ -884,6 +900,7 @@ static VALUE allocate(VALUE klass) {
   wrapper->closed = 1; /* will be set false after calling mysql_real_connect */
   wrapper->tls_verify_identity = 0;
   wrapper->tls_identity_verified = 0;
+  wrapper->tls_required = 0;
   wrapper->refcount = 1;
   wrapper->affected_rows = -1;
   wrapper->query_start = 0;
@@ -1254,6 +1271,15 @@ static VALUE rb_mysql_connect(VALUE self, VALUE user, VALUE pass, VALUE host, VA
     wrapper->tls_identity_verified = 1;
   }
 #endif
+
+  /* Connector/C refuses a server that offers no TLS only when verifying,
+   * so :required checks for itself. Credentials have already crossed the
+   * wire by now -- the check closes the connection, it cannot stop the
+   * login. */
+  if (wrapper->tls_required && mysql_get_ssl_cipher(wrapper->client) == NULL) {
+    rb_mysql_client_close(self);
+    rb_raise(cMysql2ConnectionError, "ssl_mode: :required, but the server did not negotiate TLS");
+  }
 
   return self;
 }
@@ -3040,6 +3066,7 @@ void init_mysql2_client(void) {
 #endif
 #ifdef HAVE_CONST_MYSQL_OPT_SSL_ENFORCE // MySQL 5.7.3 - 5.7.10 & MariaDB 10.x and later
   rb_const_set(cMysql2Client, rb_intern("SSL_MODE_DISABLED"), INT2NUM(SSL_MODE_DISABLED));
+  rb_const_set(cMysql2Client, rb_intern("SSL_MODE_PREFERRED"), INT2NUM(SSL_MODE_PREFERRED));
   rb_const_set(cMysql2Client, rb_intern("SSL_MODE_REQUIRED"), INT2NUM(SSL_MODE_REQUIRED));
 #endif
 #endif

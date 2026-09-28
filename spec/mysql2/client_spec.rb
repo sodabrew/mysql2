@@ -183,27 +183,17 @@ RSpec.describe Mysql2::Client do # rubocop:disable Metrics/BlockLength
       new_client(option_overrides)
     end
 
-    # 'preferred' is only in MySQL 5.6.36+, 5.7.11+, 8.0+ -- MariaDB Connector/C
-    # has no equivalent option, so mysql2 can't do anything for it there.
+    # 'preferred' works wherever SSL_MODE_PREFERRED is nonzero: natively on
+    # MySQL 5.6.36+, 5.7.11+, 8.0+, and as TLS without verification on
+    # MariaDB Connector/C.
     # 'verify_ca' works everywhere: on MariaDB Connector/C it maps to
     # MYSQL_OPT_SSL_VERIFY_SERVER_CERT, which is CA verification at most --
     # the connector never checks the hostname for local peers (#879).
     # 'verify_identity' maps to the same option plus mysql2's own
     # verification callback, which makes the hostname check real.
-    #
-    # The upper bound on the first range stops at 100000 (not left unbounded)
-    # because MariaDB's client version numbering starts there (10.x =
-    # 100000+, 11.x = 110000+, 12.x = 120000+) and MariaDB has never
-    # implemented the 5-value ssl_mode API that range is testing -- see
-    # FULL_SSL_MODE_SUPPORT in extconf.rb and rb_set_ssl_mode_option's own
-    # version >= 100000 MariaDB check.
     version = Mysql2::Client.info[:id]
-    ssl_modes = case version
-    when 50636...50700, 50711...50800, 80000...100000
-      %i[disabled preferred required verify_ca verify_identity]
-    else
-      %i[disabled required verify_ca verify_identity]
-    end
+    ssl_modes = %i[disabled required verify_ca verify_identity]
+    ssl_modes.insert(1, :preferred) unless Mysql2::Client::SSL_MODE_PREFERRED.zero?
 
     # On MariaDB-family builds without the enforcement callback,
     # :verify_identity refuses to connect rather than silently skipping the
@@ -251,6 +241,122 @@ RSpec.describe Mysql2::Client do # rubocop:disable Metrics/BlockLength
 
         options = option_overrides.merge(ssl_mode: :verify_ca, sslca: f.path)
         expect { new_client(options) }.to raise_error(Mysql2::Error)
+      end
+    end
+
+    context "non-verifying ssl_mode (#1613)" do
+      # Forwards to the real server, clearing CLIENT_SSL in its handshake
+      # packet: to the client, a server that offers no TLS.
+      class TlsStrippingProxy
+        CLIENT_SSL = 0x800
+
+        def initialize(real_host, real_port)
+          @server = TCPServer.new('127.0.0.1', 0)
+          @real_host = real_host
+          @real_port = real_port
+          @threads = []
+        end
+
+        def port
+          @server.addr[1]
+        end
+
+        def run
+          @threads << Thread.new do
+            loop do
+              client_sock = @server.accept
+              @threads << Thread.new(client_sock) { |cs| handle(cs) }
+            end
+          end
+        end
+
+        def handle(client_sock)
+          upstream = TCPSocket.new(@real_host, @real_port)
+          client_sock.write(strip_ssl(upstream))
+          [
+            Thread.new { pump(client_sock, upstream) },
+            Thread.new { pump(upstream, client_sock) },
+          ].each { |t| @threads << t }.each(&:join)
+        ensure
+          [client_sock, upstream].compact.each do |sock|
+            begin
+              sock.close
+            rescue StandardError
+              nil
+            end
+          end
+        end
+
+        # HandshakeV10: protocol version byte, NUL-terminated server version,
+        # 4-byte thread id, 8 scramble bytes, 1 filler byte, then the low 16
+        # capability bits.
+        def strip_ssl(upstream)
+          header = upstream.read(4)
+          payload = upstream.read(header.unpack('V').first & 0xffffff)
+          offset = payload.index("\0", 1) + 1 + 4 + 8 + 1
+          payload[offset, 2] = [payload[offset, 2].unpack('v').first & ~CLIENT_SSL].pack('v')
+          header + payload
+        end
+
+        def pump(src, dst)
+          loop { dst.write(src.readpartial(4096)) }
+        rescue IOError, Errno::ECONNRESET, Errno::EPIPE
+          nil
+        end
+
+        def shutdown
+          @threads.each(&:kill)
+          @server.close
+        rescue IOError
+          nil
+        end
+      end
+
+      # By name and with no CA: Connector/C 3.4 verifies the server
+      # certificate by default, and refuses the suite's untrusted one here.
+      let(:unverified_options) { { 'host' => ssl_cert_host } }
+
+      def stripping_proxy_port
+        creds = DatabaseCredentials['root']
+        @stripping_proxy = TlsStrippingProxy.new(creds['host'], creds['port'] || 3306)
+        @stripping_proxy.run
+        @stripping_proxy.port
+      end
+
+      after(:example) { @stripping_proxy.shutdown if @stripping_proxy }
+
+      it "connects in plaintext with :disabled" do
+        new_client(unverified_options.merge(ssl_mode: :disabled)) do |client|
+          expect(client.ssl_cipher).to be_nil
+        end
+      end
+
+      it "connects over TLS without verifying the certificate with :preferred" do
+        skip "this build has no :preferred" if Mysql2::Client::SSL_MODE_PREFERRED.zero?
+
+        new_client(unverified_options.merge(ssl_mode: :preferred)) do |client|
+          expect(client.ssl_cipher).not_to be_empty
+        end
+      end
+
+      it "connects over TLS without verifying the certificate with :required" do
+        new_client(unverified_options.merge(ssl_mode: :required)) do |client|
+          expect(client.ssl_cipher).not_to be_empty
+        end
+      end
+
+      it "falls back to plaintext with :preferred when the server offers no TLS" do
+        skip "this build has no :preferred" if Mysql2::Client::SSL_MODE_PREFERRED.zero?
+
+        new_client('host' => '127.0.0.1', 'port' => stripping_proxy_port, ssl_mode: :preferred) do |client|
+          expect(client.ssl_cipher).to be_nil
+        end
+      end
+
+      it "refuses with :required when the server offers no TLS" do
+        expect do
+          new_client('host' => '127.0.0.1', 'port' => stripping_proxy_port, ssl_mode: :required)
+        end.to raise_error(Mysql2::Error::ConnectionError, /TLS|SSL/)
       end
     end
 

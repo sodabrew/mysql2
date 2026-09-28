@@ -383,8 +383,8 @@ Notes:
 | --- | --- | --- | --- | --- | --- | --- |
 | MySQL 5.7.11+ / 8.0.x | all 5, incl. `:preferred` | ✅ native | ✅ | ❌ | ❌ | ❌ |
 | MySQL 8.1+ / 8.4.x LTS / 9.7.x LTS | all 5, incl. `:preferred` | ✅ native | ✅ | ❌ | ❌ | ✅ |
-| MariaDB Connector/C 3.3.x | 3 of 5 (`:disabled`/`:required`/`:verify_ca`) | ❌ | ❌ | ❌ | ✅ | ❌ |
-| MariaDB Connector/C 3.4.3+ | 4 of 5, no `:preferred` | ✅ via mysql2's callback | ✅ | ✅ | ✅ | ❌ |
+| MariaDB Connector/C 3.3.x | 4 of 5, no `:verify_identity` | ❌ | ❌ | ❌ | ✅ | ❌ |
+| MariaDB Connector/C 3.4.3+ | all 5 | ✅ via mysql2's callback | ✅ | ✅ | ✅ | ❌ |
 
 ✅ means the option is supported with this client library.
 
@@ -404,12 +404,16 @@ Runtime client library and TLS feature introspection:
 | `:tls_mode`        | MySQL client behavior                               | MariaDB client behavior
 | ---                | ---                                                 | ---
 | `:disabled`        | no TLS                                              | no TLS
-| `:preferred`       | TLS if available, else quiet fallback to plaintext  | not supported
-| `:required`        | TLS required, no certificate verification           | TLS required, no certificate verification
+| `:preferred`       | TLS if available, else quiet fallback to plaintext  | TLS if available, else quiet fallback to plaintext
+| `:required`        | TLS required, no certificate verification           | TLS required, no certificate verification -- a server without TLS is refused after login, not before
 | `:verify_ca`       | TLS required, CA chain verified                     | TLS required, CA chain verified -- hostname is NOT checked, even for local peers
 | `:verify_identity` | TLS required, CA chain + hostname verified natively | TLS required, CA chain + hostname verified via mysql2's own verification callback (Connector/C 3.4+)
 
 Notes:
+- With `:tls_mode` unset, the client library's own default applies. MariaDB
+  Connector/C 3.4+ verifies the server certificate by default, unless built
+  with `DEFAULT_SSL_VERIFY_SERVER_CERT=OFF`. Use `:required` or `:preferred`
+  for TLS without certificate verification.
 - With `:tls_ca`/`:tls_capath` unset, the TLS backend resolves its
   default trust store natively, i.e. using OpenSSL's default verify paths,
   environment variables `SSL_CERT_FILE`/`SSL_CERT_DIR`, or the platform certificate store.

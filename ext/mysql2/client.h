@@ -78,6 +78,10 @@ typedef struct {
    * verification against the live TLS session. Reported by Client#tls_info
    * as :identity_verified. */
   int tls_identity_verified;
+  /* ssl_mode: :required on the MYSQL_OPT_SSL_ENFORCE path: Connector/C falls
+   * back to plaintext when the server offers no TLS and verification is off,
+   * so rb_mysql_connect refuses a connection that negotiated no cipher. */
+  int tls_required;
   MYSQL *client;
   mysql2_client_state_t state;
   /* The pid that established this connection (set on every successful
