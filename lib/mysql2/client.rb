@@ -40,6 +40,15 @@ module Mysql2
     # Options read once at connect time and never re-consulted afterward.
     # Unlike .default_query_options, these have no live per-query meaning --
     # changing them after connecting has no effect, by design.
+    # Once per process, not per Client.new: a connection pool would
+    # otherwise repeat it on every connect.
+    def self.warn_legacy_connect_flags_once(message) # :nodoc:
+      return if @legacy_connect_flags_warned
+
+      @legacy_connect_flags_warned = true
+      warn message
+    end
+
     def self.default_connect_options
       @default_connect_options ||= {
         connect_flags: DEFAULT_CONNECT_FLAGS,
@@ -204,15 +213,20 @@ module Mysql2
     # Deprecated fallback for Client.default_query_options[:connect_flags]
     # |= SOME_FLAG, a real-world idiom (predates .default_connect_options)
     # for setting a global default connect flags value. An explicit
-    # connect_flags: passed to this Client.new call always wins -- this
-    # only fills in the class-level default's own base.
+    # connect_flags: passed to Client.new wins, then a modified
+    # default_connect_options[:connect_flags], then this fallback.
     def apply_legacy_connect_flags_fallback(opts)
       return if opts.key?(:connect_flags)
 
       legacy = self.class.default_query_options[:connect_flags]
       return if legacy == DEFAULT_CONNECT_FLAGS
 
-      warn "Client.default_query_options[:connect_flags] is deprecated and will stop being read in a future version; use Client.default_connect_options[:connect_flags] instead"
+      if self.class.default_connect_options[:connect_flags] != DEFAULT_CONNECT_FLAGS
+        Client.warn_legacy_connect_flags_once "Client.default_query_options[:connect_flags] is deprecated and ignored because Client.default_connect_options[:connect_flags] is also set"
+        return
+      end
+
+      Client.warn_legacy_connect_flags_once "Client.default_query_options[:connect_flags] is deprecated and will stop being read in a future version; use Client.default_connect_options[:connect_flags] instead"
       @connect_options[:connect_flags] = legacy
     end
 

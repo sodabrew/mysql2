@@ -536,7 +536,7 @@ Mysql2::Client.default_connect_options[:connect_flags] |= Mysql2::Client::MULTI_
 
 (`Mysql2::Client.default_query_options[:connect_flags]` is the same idea
 under its old name -- still read as a deprecated fallback, but
-`default_connect_options` is the current one.)
+`default_connect_options` is the current one and wins if both are set.)
 
 ### Using Active Record's database.yml
 

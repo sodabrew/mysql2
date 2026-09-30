@@ -176,12 +176,46 @@ RSpec.describe Mysql2::Client do # rubocop:disable Metrics/BlockLength
   it "honors the deprecated Client.default_query_options[:connect_flags] fallback, with a warning" do
     original = Mysql2::Client.default_query_options[:connect_flags]
     begin
+      Mysql2::Client.instance_variable_set(:@legacy_connect_flags_warned, false)
       Mysql2::Client.default_query_options[:connect_flags] |= Mysql2::Client::FOUND_ROWS
       client = nil
       expect { client = new_client }.to output(/default_query_options\[:connect_flags\] is deprecated/).to_stderr
       expect(client.connect_options[:connect_flags] & Mysql2::Client::FOUND_ROWS).not_to be_zero
     ensure
       Mysql2::Client.default_query_options[:connect_flags] = original
+      Mysql2::Client.instance_variable_set(:@legacy_connect_flags_warned, false)
+    end
+  end
+
+  it "warns about the deprecated default_query_options[:connect_flags] once per process" do
+    original = Mysql2::Client.default_query_options[:connect_flags]
+    begin
+      Mysql2::Client.instance_variable_set(:@legacy_connect_flags_warned, false)
+      Mysql2::Client.default_query_options[:connect_flags] |= Mysql2::Client::FOUND_ROWS
+      clients = []
+      expect { 2.times { clients << new_client } }.to output(/\A[^\n]*deprecated[^\n]*\n\z/).to_stderr
+      clients.each { |c| expect(c.connect_options[:connect_flags] & Mysql2::Client::FOUND_ROWS).not_to be_zero }
+    ensure
+      Mysql2::Client.default_query_options[:connect_flags] = original
+      Mysql2::Client.instance_variable_set(:@legacy_connect_flags_warned, false)
+    end
+  end
+
+  it "prefers a modified default_connect_options[:connect_flags] over the deprecated default_query_options fallback" do
+    original_query = Mysql2::Client.default_query_options[:connect_flags]
+    original_connect = Mysql2::Client.default_connect_options[:connect_flags]
+    begin
+      Mysql2::Client.instance_variable_set(:@legacy_connect_flags_warned, false)
+      Mysql2::Client.default_query_options[:connect_flags] |= Mysql2::Client::FOUND_ROWS
+      Mysql2::Client.default_connect_options[:connect_flags] |= Mysql2::Client::MULTI_STATEMENTS
+      client = nil
+      expect { client = new_client }.to output(/default_query_options\[:connect_flags\] is deprecated and ignored/).to_stderr
+      expect(client.connect_options[:connect_flags] & Mysql2::Client::MULTI_STATEMENTS).not_to be_zero
+      expect(client.connect_options[:connect_flags] & Mysql2::Client::FOUND_ROWS).to be_zero
+    ensure
+      Mysql2::Client.default_query_options[:connect_flags] = original_query
+      Mysql2::Client.default_connect_options[:connect_flags] = original_connect
+      Mysql2::Client.instance_variable_set(:@legacy_connect_flags_warned, false)
     end
   end
 
